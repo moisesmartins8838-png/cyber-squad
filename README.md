@@ -1,32 +1,24 @@
-# CYBER SQUAD 3D — Missão 28
+SPARROW DUO SPACE — Jogo cooperativo em dupla
 
-Versão experimental 3D do jogo cooperativo para 28 computadores, com sete salas de quatro jogadores. Cada equipe tem 5 minutos para coletar núcleos e ativar quatro relés; cada relé exige dois agentes diferentes pressionando E perto dele.
+CONTROLES
+- Piloto: computador ímpar (PC 1, 3, 5, ... 27). WASD/setas para mover a nave. V aceita a habilidade pedida.
+- Artilheiro: computador par (PC 2, 4, 6, ... 28). Espaço ou clique no jogo para atirar. E pede habilidade.
+- A habilidade só ativa quando o artilheiro pede e o piloto aceita com V.
+- A primeira dupla a atingir 1000 pontos vence; a rodada também tem limite de 5 minutos.
+- O painel oferece chat e mensagens rápidas para coordenar a dupla.
 
-## Controles
-- WASD ou setas: mover
-- Shift: correr (reservado para a próxima melhoria; o movimento básico já está disponível)
-- E: enviar sinal/ajudar a ativar um relé
-- Arrastar o mouse sobre o jogo: girar a câmera; clique direito também ativa captura do mouse quando o navegador permitir
-- Chat e mensagens rápidas: combinar a estratégia
+TESTE OFFLINE
+1. Extraia o ZIP.
+2. Abra `public/index.html` com dois cliques no Edge/Chrome.
+3. Clique em “Iniciar demonstração”.
+4. Escolha PILOTO e mova com WASD/setas. Troque para ARTILHEIRO e mantenha ESPAÇO para atirar.
+5. Para testar a habilidade: selecione ARTILHEIRO e pressione E; selecione PILOTO e pressione V.
 
-## Personagens 3D
-O jogo tenta carregar o modelo de personagem animado `Soldier.glb` dos exemplos públicos do Three.js (`https://threejs.org/examples/models/gltf/Soldier.glb`). O código mantém um personagem 3D de reserva caso o modelo externo não carregue. A cena 3D usa Three.js via CDN, então os computadores precisam ter acesso à internet.
+MULTIPLAYER ONLINE (28 PCs / 14 duplas)
+- Requer Node.js no servidor/Render, não nos computadores dos alunos.
+- Copie os arquivos do projeto para o repositório do Render e publique com `npm install` e `npm start`.
+- URL dos PCs: `https://SEU-SITE.onrender.com/?pc=1` até `?pc=28`.
+- PCs 1+2 formam dupla 1; 3+4 dupla 2; ... 27+28 dupla 14.
+- Este ZIP é um protótipo inicial. Faça um teste com uma dupla antes de usar em competição. O prêmio é administrado pelo organizador, não há pagamento ou premiação automática no código.
 
-A documentação do Three.js recomenda glTF/GLB para modelos 3D de runtime: https://threejs.org/manual/pages/loading-3d-models.html. Os pacotes de modelos 3D CC0 de Kenney também são uma fonte de assets gratuitos: https://kenney.nl/assets.
-
-## Publicar no Render
-1. Extraia este ZIP.
-2. Copie os arquivos para a pasta do repositório conectado ao Render, mantendo a pasta `.git`.
-3. Execute:
-   ```powershell
-   git add .
-   git commit -m "Adiciona versão 3D cooperativa"
-   git push
-   ```
-4. Aguarde o deploy terminar.
-5. Teste com `https://SEU-SITE.onrender.com/?pc=1`, `?pc=2`, `?pc=3` e `?pc=4`.
-
-## Observações
-- O servidor usa Node.js e Socket.IO; os computadores dos alunos só precisam do navegador.
-- Cada número de PC é fixo: 1–4 sala 1, 5–8 sala 2, ... 25–28 sala 7.
-- A primeira versão 3D é um protótipo jogável e precisa ser testada no endereço publicado com quatro navegadores antes de ser usada com a turma toda.
+LOCAL PREVIEW NOTE: Abra `public/index.html` pelo Live Server. Os arquivos CSS e JavaScript usam caminhos relativos (`./style.css` e `./game.js`) para funcionar quando o site está em `/public/`.

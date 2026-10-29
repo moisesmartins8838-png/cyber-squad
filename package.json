@@ -1,8 +1,8 @@
 {
-  "name": "cyber-squad",
-  "version": "1.3.0",
+  "name": "sparrow-duo-space",
+  "version": "1.0.0",
   "private": true,
-  "description": "3D cooperative Cyber Squad browser game for 28 school computers",
+  "description": "Cooperative two-player space shooter for browser",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"

@@ -1,169 +1,45 @@
-const express = require("express");
-const http = require("http");
-const path = require("path");
-const { Server } = require("socket.io");
-
-const app = express();
-const server = http.createServer(app);
-const io = new Server(server, {
-  cors: { origin: "*" },
-  transports: ["websocket", "polling"]
+const express=require('express');
+const http=require('http');
+const {Server}=require('socket.io');
+const path=require('path');
+const app=express(),server=http.createServer(app),io=new Server(server);
+app.use(express.static(path.join(__dirname,'public')));
+app.get('/health',(_,res)=>res.json({ok:true,game:'Sparrow Duo Space'}));
+const rooms=new Map(), clients=new Map();
+const COLORS=['#58efff','#ff6dba'];
+function roomId(pc){return 'duo-'+Math.ceil(pc/2)}
+function newRoom(id){return {id,players:[],score:0,time:300,status:'waiting',ship:{x:500,y:490,hp:100,shield:100},enemies:[],bullets:[],enemyBullets:[],gems:[],nextId:1,skill:null,skillCooldown:0,lastSpawn:0,lastTick:Date.now(),combo:0,round:1}}
+function roomFor(pc){const id=roomId(pc);if(!rooms.has(id))rooms.set(id,newRoom(id));return rooms.get(id)}
+function publicState(r){return {roomId:r.id,players:r.players.map(p=>({pc:p.pc,role:p.role,connected:!!p.socketId,name:p.name})),score:r.score,time:Math.ceil(r.time),status:r.status,ship:r.ship,enemies:r.enemies,bullets:r.bullets,gems:r.gems,skill:r.skill,skillCooldown:Math.ceil(r.skillCooldown),combo:r.combo,round:r.round}}
+function emit(r){io.to(r.id).emit('state',publicState(r))}
+function addEnemy(r){const id=r.nextId++;r.enemies.push({id,x:40+Math.random()*920,y:-35,hp:Math.random()<.2?3:1,r:14+Math.random()*11,speed:45+Math.random()*55,value:Math.random()<.15?30:10,type:Math.random()<.15?'elite':'rock',spin:Math.random()*6})}
+function endRound(r){r.status='finished';io.to(r.id).emit('roundEnd',{score:r.score,won:r.score>=1000});emit(r)}
+function tick(r,dt,now){if(r.status!=='playing')return;r.time-=dt;if(r.time<=0){r.time=0;endRound(r);return}
+r.skillCooldown=Math.max(0,r.skillCooldown-dt);
+if(now-r.lastSpawn>850){addEnemy(r);r.lastSpawn=now}
+for(const e of r.enemies){e.y+=e.speed*dt;e.spin+=dt; if(e.y>550){e.y=550;e.speed=0}}
+for(const b of r.bullets)b.y-=520*dt;
+for(const b of r.enemyBullets)b.y+=210*dt;
+r.bullets=r.bullets.filter(b=>b.y>-30);r.enemyBullets=r.enemyBullets.filter(b=>b.y<560);
+for(let i=r.enemies.length-1;i>=0;i--){const e=r.enemies[i];let hit=false;for(let j=r.bullets.length-1;j>=0;j--){const b=r.bullets[j];if(Math.hypot(b.x-e.x,b.y-e.y)<e.r+5){r.bullets.splice(j,1);e.hp--;if(e.hp<=0){r.score+=e.value;r.combo++;if(r.combo%10===0)r.score+=50;r.gems.push({id:r.nextId++,x:e.x,y:e.y,value:10});r.enemies.splice(i,1);hit=true;break}}}if(hit)continue;if(Math.hypot(e.x-r.ship.x,e.y-r.ship.y)<e.r+18){r.ship.hp=Math.max(0,r.ship.hp-12);r.enemies.splice(i,1);if(r.ship.hp<=0)endRound(r)}}
+for(let i=r.gems.length-1;i>=0;i--){const g=r.gems[i];g.y+=80*dt;if(Math.hypot(g.x-r.ship.x,g.y-r.ship.y)<27){r.score+=g.value;r.gems.splice(i,1)}else if(g.y>560)r.gems.splice(i,1)}
+if(r.score>=1000)endRound(r);
+}
+setInterval(()=>{const now=Date.now();for(const r of rooms.values()){const dt=Math.min(.05,(now-r.lastTick)/1000);r.lastTick=now;tick(r,dt,now);emit(r)}},50);
+io.on('connection',socket=>{
+socket.on('join',data=>{const pc=Number(data?.pc);if(!Number.isInteger(pc)||pc<1||pc>28){socket.emit('joinError','Use um endereço com ?pc=1 até ?pc=28.');return}
+const r=roomFor(pc);const role=pc%2===1?'pilot':'gunner';const existing=r.players.find(p=>p.pc===pc);if(existing&&existing.socketId!==socket.id){io.to(existing.socketId).emit('notice','Esta estação foi aberta em outra janela.');}
+if(existing){existing.socketId=socket.id}else r.players.push({pc,role,socketId:socket.id,name:role==='pilot'?'Piloto':'Artilheiro'});
+socket.data.pc=pc;socket.data.room=r.id;socket.join(r.id);
+if(r.players.length>=2&&r.status==='waiting'){r.status='playing';r.time=300;r.lastTick=Date.now();r.lastSpawn=Date.now();socket.emit('notice','Dupla conectada! Piloto controla a nave; artilheiro dispara.');io.to(r.id).emit('notice','MISSÃO INICIADA! Cheguem a 1000 pontos.')}
+emit(r);
 });
-const PORT = Number(process.env.PORT || 3000);
-const MAX_PC = 28, TEAM_SIZE = 4, GAME_SECONDS = 300;
-const WORLD = { width: 1200, height: 720 };
-const rooms = new Map();
-
-app.use(express.static(path.join(__dirname, "public")));
-app.get("/health", (_req, res) => res.json({ ok: true, game: "Cyber Squad" }));
-app.get("/config", (_req, res) => res.json({ game: "Cyber Squad", maxPc: MAX_PC, teamSize: TEAM_SIZE, gameSeconds: GAME_SECONDS }));
-
-function roomIdForPc(pc) { return `team-${Math.ceil(pc / TEAM_SIZE)}`; }
-function rangeForRoom(id) {
-  const n = Number(id.split("-")[1]);
-  return { first: (n - 1) * TEAM_SIZE + 1, last: n * TEAM_SIZE };
-}
-function spawnCore() {
-  const golden = Math.random() < 0.12;
-  return { id: Math.random().toString(36).slice(2, 10), x: 80 + Math.random() * 1040, y: 125 + Math.random() * 540, collected: false, type: golden ? "gold" : "normal" };
-}
-function spawnRelays() {
-  return [
-    { id: "alpha", name: "RELE ALFA", x: 230, y: 220, activated: false, helpers: [] },
-    { id: "beta", name: "RELE BETA", x: 970, y: 220, activated: false, helpers: [] },
-    { id: "gamma", name: "RELE GAMA", x: 230, y: 570, activated: false, helpers: [] },
-    { id: "delta", name: "RELE DELTA", x: 970, y: 570, activated: false, helpers: [] }
-  ];
-}
-function getRoom(id) {
-  if (!rooms.has(id)) rooms.set(id, { id, players: new Map(), status: "waiting", startedAt: null, endsAt: null, score: 0, cores: Array.from({length:16}, spawnCore), relays: spawnRelays(), recovered: 0, wave: 1, combo: 0, lastCollectAt: 0, lastBroadcast: 0, resetTimer: null });
-  return rooms.get(id);
-}
-function resetRoom(room) {
-  clearTimeout(room.resetTimer);
-  room.status = "waiting"; room.startedAt = null; room.endsAt = null; room.score = 0; room.recovered = 0; room.wave = 1; room.combo = 0; room.lastCollectAt = 0;
-  room.cores = Array.from({length:16}, spawnCore); room.relays = spawnRelays();
-  for (const p of room.players.values()) { p.x = 120 + (p.slot - 1) * 90; p.y = 360; p.lastMove = 0; }
-}
-function publicState(room) {
-  return {
-    roomId: room.id, roomLabel: `Partida ${room.id.split("-")[1]}`, range: rangeForRoom(room.id),
-    status: room.status, score: room.score, recovered: room.recovered, wave: room.wave, combo: room.combo,
-    secondsLeft: room.status === "playing" ? Math.max(0, Math.ceil((room.endsAt - Date.now()) / 1000)) : GAME_SECONDS,
-    players: [...room.players.values()].map(p => ({ id:p.id, pc:p.pc, slot:p.slot, name:`Agente ${p.pc}`, x:p.x, y:p.y, color:["#55e6ff","#bd7bff","#6dffb0","#ffbd5c"][p.slot-1] })),
-    cores: room.cores.filter(c => !c.collected), relays: room.relays.map(r => ({ id:r.id, name:r.name, x:r.x, y:r.y, activated:r.activated, helpers:r.helpers.map(h => h.pc) })), world: WORLD, connected: room.players.size, required: TEAM_SIZE
-  };
-}
-function emitRoom(room) { io.to(room.id).emit("state", publicState(room)); }
-function startRoom(room) {
-  if (room.players.size !== TEAM_SIZE || room.status === "playing") return;
-  room.status = "playing"; room.startedAt = Date.now(); room.endsAt = room.startedAt + GAME_SECONDS * 1000;
-  room.score = 0; room.recovered = 0; room.wave = 1; room.combo = 0; room.lastCollectAt = 0; room.cores = Array.from({length:16}, spawnCore); room.relays = spawnRelays();
-  io.to(room.id).emit("gameStarted", { seconds: GAME_SECONDS }); emitRoom(room);
-}
-function tryStart(room) { if (room.status === "waiting" && room.players.size === TEAM_SIZE) startRoom(room); }
-
-io.on("connection", socket => {
-  socket.on("join", payload => {
-    const pc = Number(payload && payload.pc);
-    if (!Number.isInteger(pc) || pc < 1 || pc > MAX_PC) return socket.emit("joinError", "Número inválido. Use PC 1 a 28.");
-    const room = getRoom(roomIdForPc(pc));
-    const existing = [...room.players.values()].find(p => p.pc === pc && p.id !== socket.id);
-    if (existing) return socket.emit("joinError", `O computador ${pc} já está conectado.`);
-    if (room.status === "playing" && !room.players.has(socket.id)) return socket.emit("joinError", "A partida já começou. Aguarde a próxima rodada.");
-    // Rejoining same socket is safe; replace old room membership if needed.
-    const oldRoom = socket.data.roomId && rooms.get(socket.data.roomId);
-    if (oldRoom && oldRoom.id !== room.id) oldRoom.players.delete(socket.id);
-    socket.join(room.id); socket.data.roomId = room.id; socket.data.pc = pc;
-    const slot = ((pc - 1) % TEAM_SIZE) + 1;
-    if (!room.players.has(socket.id)) room.players.set(socket.id, {id:socket.id,pc,slot,x:120+(slot-1)*90,y:360,lastMove:0});
-    emitRoom(room);
-    io.to(room.id).emit("lobby", {connected:room.players.size,required:TEAM_SIZE,message:`Aguardando jogadores: ${room.players.size}/4`});
-    tryStart(room);
-  });
-  socket.on("chat", payload => {
-    const room = rooms.get(socket.data.roomId), p = room && room.players.get(socket.id);
-    if (!room || !p) return;
-    const message = String(payload && payload.message || "").replace(/[<>]/g, "").trim().slice(0, 120);
-    if (!message) return;
-    io.to(room.id).emit("chatMessage", { pc: p.pc, name: `Agente ${p.pc}`, message, at: Date.now() });
-  });
-  socket.on("interact", () => {
-    const room = rooms.get(socket.data.roomId), p = room && room.players.get(socket.id);
-    if (!room || !p || room.status !== "playing") return;
-    const now = Date.now();
-    const relay = room.relays.find(r => !r.activated && Math.hypot(r.x-p.x, r.y-p.y) < 78);
-    if (!relay) { socket.emit("notice", "Chegue perto de um relé para interagir com E."); return; }
-    relay.helpers = relay.helpers.filter(h => now - h.at < 9000);
-    if (!relay.helpers.some(h => h.id === socket.id)) relay.helpers.push({ id: socket.id, pc: p.pc, at: now });
-    io.to(room.id).emit("relayProgress", { relayId: relay.id, helpers: relay.helpers.map(h => h.pc), required: 2 });
-    if (new Set(relay.helpers.map(h => h.id)).size >= 2) {
-      relay.activated = true; room.score += 150;
-      io.to(room.id).emit("relayActivated", { relayId: relay.id, name: relay.name, score: room.score, by: relay.helpers.map(h => h.pc), bonus: 150 });
-      if (room.relays.every(r => r.activated)) {
-        room.score += 300; room.wave += 1; room.relays = spawnRelays(); room.cores = Array.from({length:16}, spawnCore);
-        io.to(room.id).emit("teamObjectiveComplete", { score: room.score, bonus: 300, wave: room.wave });
-      }
-    } else {
-      socket.emit("notice", `Sinal enviado ao ${relay.name}. Falta outro agente! Avise a equipe pelo chat.`);
-    }
-    emitRoom(room);
-  });
-  socket.on("move", input => {
-    const room = rooms.get(socket.data.roomId), p = room && room.players.get(socket.id);
-    if (!room || !p || room.status !== "playing") return;
-    const now = Date.now(); if (now - p.lastMove < 35) return; p.lastMove = now;
-    let dx = Math.max(-1, Math.min(1, Number(input && input.dx) || 0));
-    let dy = Math.max(-1, Math.min(1, Number(input && input.dy) || 0));
-    const len = Math.hypot(dx,dy) || 1, speed = 7;
-    p.x = Math.max(32,Math.min(WORLD.width-32,p.x+dx/len*speed));
-    p.y = Math.max(100,Math.min(WORLD.height-32,p.y+dy/len*speed));
-    for (const c of room.cores) if (!c.collected && Math.hypot(c.x-p.x,c.y-p.y)<32) {
-      c.collected = true;
-      const collectedAt = Date.now();
-      room.combo = collectedAt - room.lastCollectAt <= 3500 ? room.combo + 1 : 1;
-      room.lastCollectAt = collectedAt;
-      const multiplier = room.combo >= 8 ? 3 : room.combo >= 4 ? 2 : 1;
-      const basePoints = c.type === "gold" ? 50 : 10;
-      const points = basePoints * multiplier;
-      room.score += points;
-      room.recovered += 1;
-      io.to(room.id).emit("coreCollected",{pc:p.pc,score:room.score,points,type:c.type,combo:room.combo,multiplier,recovered:room.recovered,wave:room.wave});
-      const remaining = room.cores.some(core => !core.collected);
-      if (!remaining) {
-        room.score += 100;
-        const completedWave = room.wave;
-        room.wave += 1;
-        room.cores = Array.from({length:16}, spawnCore);
-        io.to(room.id).emit("waveComplete",{wave:completedWave,nextWave:room.wave,bonus:100,score:room.score});
-      }
-    }
-  });
-  socket.on("disconnect", () => {
-    const room = rooms.get(socket.data.roomId); if (!room) return;
-    room.players.delete(socket.id);
-    if (room.players.size === 0 && room.status !== "playing") resetRoom(room);
-    else if (room.status === "playing") io.to(room.id).emit("notice","Um agente desconectou. Continuem a missão!");
-    emitRoom(room);
-    io.to(room.id).emit("lobby",{connected:room.players.size,required:TEAM_SIZE,message:room.status==="playing"?"Missão em andamento":`Aguardando jogadores: ${room.players.size}/4`});
-  });
+socket.on('move',d=>{const r=rooms.get(socket.data.room),pc=socket.data.pc;if(!r||r.status!=='playing'||pc%2===0)return;const dx=Math.max(-1,Math.min(1,Number(d?.dx)||0)),dy=Math.max(-1,Math.min(1,Number(d?.dy)||0));r.ship.x=Math.max(25,Math.min(975,r.ship.x+dx*260*.05));r.ship.y=Math.max(60,Math.min(510,r.ship.y+dy*260*.05));});
+socket.on('shoot',()=>{const r=rooms.get(socket.data.room),pc=socket.data.pc;if(!r||r.status!=='playing'||pc%2!==0)return;if(r.bullets.length<40)r.bullets.push({id:r.nextId++,x:r.ship.x-8,y:r.ship.y-18},{id:r.nextId++,x:r.ship.x+8,y:r.ship.y-18})});
+socket.on('requestSkill',()=>{const r=rooms.get(socket.data.room),pc=socket.data.pc;if(!r||r.status!=='playing'||pc%2!==0)return;r.skill={requestedBy:pc,expires:Date.now()+6000};io.to(r.id).emit('notice','Artilheiro pediu habilidade! Piloto pressione V para aceitar.')});
+socket.on('approveSkill',()=>{const r=rooms.get(socket.data.room),pc=socket.data.pc;if(!r||r.status!=='playing'||pc%2!==1||!r.skill||r.skill.expires<Date.now()||r.skillCooldown>0)return;r.skill=null;r.skillCooldown=18;r.ship.shield=100;r.enemies.forEach(e=>{if(Math.hypot(e.x-r.ship.x,e.y-r.ship.y)<180){r.score+=e.value;r.enemies=r.enemies.filter(x=>x!==e)}});r.score+=50;io.to(r.id).emit('skillUsed',{score:r.score});io.to(r.id).emit('notice','HABILIDADE APROVADA! Pulso de energia +50 pontos.')});
+socket.on('chat',d=>{const r=rooms.get(socket.data.room);if(!r)return;const p=r.players.find(p=>p.pc===socket.data.pc);if(!p)return;io.to(r.id).emit('chatMessage',{pc:p.pc,role:p.role,message:String(d?.message||'').slice(0,120)})});
+socket.on('reset',()=>{const r=rooms.get(socket.data.room);if(!r||socket.data.pc%2!==1)return;const id=r.id;Object.assign(r,newRoom(id));r.players=r.players.filter(p=>p.socketId);emit(r);io.to(r.id).emit('notice','Nova partida preparada.')});
+socket.on('disconnect',()=>{const r=rooms.get(socket.data.room);if(!r)return;const p=r.players.find(p=>p.socketId===socket.id);if(p)p.socketId=null;emit(r)});
 });
-
-setInterval(() => {
-  const now = Date.now();
-  for (const room of rooms.values()) {
-    if (room.status === "playing" && room.endsAt <= now) {
-      room.status = "finished";
-      io.to(room.id).emit("gameOver",{score:room.score}); emitRoom(room);
-      room.resetTimer = setTimeout(() => {
-        if (room.status !== "finished") return;
-        resetRoom(room); emitRoom(room);
-        io.to(room.id).emit("lobby",{connected:room.players.size,required:TEAM_SIZE,message:`Próxima rodada: ${room.players.size}/4 agentes`});
-        tryStart(room);
-      }, 10000);
-    }
-    if (now - room.lastBroadcast > 75) { room.lastBroadcast = now; emitRoom(room); }
-  }
-}, 50);
-
-server.listen(PORT, "0.0.0.0", () => console.log(`Cyber Squad listening on port ${PORT}`));
+const port=process.env.PORT||3000;server.listen(port,'0.0.0.0',()=>console.log('Sparrow Duo ouvindo na porta '+port));
