@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Cyber Squad — Missão 28</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+<div class="app-shell">
+  <header class="topbar">
+    <div class="brand"><div class="logo">CS</div><div><div class="eyebrow">MISSÃO 28</div><h1>CYBER SQUAD</h1></div></div>
+    <div class="status-pill"><span class="pulse"></span><span id="connection">Preparando conexão...</span></div>
+  </header>
+  <main>
+    <section class="hero-row">
+      <div><div class="eyebrow">OPERAÇÃO COOPERATIVA</div><h2 id="headline">Sua equipe. Uma missão.</h2><p id="subheadline">Colete os núcleos de energia e recupere a rede.</p></div>
+      <div class="timer-card"><span>TEMPO DE MISSÃO</span><strong id="timer">05:00</strong><small id="roundStatus">AGUARDANDO EQUIPE</small></div>
+    </section>
+    <section class="game-layout">
+      <div class="game-card">
+        <div class="game-top"><span id="roomLabel">PARTIDA —</span><span id="teamCount">0/4 AGENTES</span></div>
+        <canvas id="game" width="1200" height="720" aria-label="Área do jogo"></canvas>
+        <div class="game-footer"><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> ou <kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd> para mover</span><span>Encontre os <b>núcleos brilhantes</b></span></div>
+      </div>
+      <aside class="side-column">
+        <div class="panel score-panel"><div class="panel-title">PONTUAÇÃO DA EQUIPE</div><div class="score" id="score">0000</div><div class="score-caption">Pontos compartilhados</div><div class="progress"><span id="progress"></span></div><div class="progress-caption"><span>Núcleos recuperados</span><b id="coresCount">0</b></div></div>
+        <div class="panel"><div class="panel-title">SUA EQUIPE</div><div id="players" class="players-list"><div class="empty">Preparando agentes...</div></div></div>
+        <div class="panel mission-panel"><div class="panel-title">OBJETIVO</div><div class="mission-icon">✦</div><h3>Reative a rede</h3><p>Movam-se juntos, encontrem os núcleos de energia e façam a maior pontuação antes do fim do tempo.</p><div class="mission-tag">TRABALHO EM EQUIPE</div></div>
+      </aside>
+    </section>
+    <div id="toast" class="toast" role="status"></div>
+  </main>
+  <footer><span>CYBER SQUAD <span class="muted">/ MISSÃO 28</span></span><span id="pcLabel">COMPUTADOR —</span><span>FEITO PARA JOGAR EM EQUIPE</span></footer>
+</div>
+<div id="overlay" class="overlay"><div class="overlay-card"><div class="overlay-symbol">✦</div><div class="eyebrow">SISTEMA DE MISSÃO</div><h2 id="overlayTitle">Preparando conexão...</h2><p id="overlayText">Você será conectado automaticamente à sua equipe.</p><div class="loading-bar"><span></span></div><small id="overlaySmall">CYBER SQUAD • MISSÃO 28</small></div></div>
+<!-- Socket.IO é carregado pelo servidor online. Em prévia local, game.js ativa modo demonstração. -->
+<script src="/socket.io/socket.io.js"></script>
+<script src="./game.js"></script>
+</body>
+</html>

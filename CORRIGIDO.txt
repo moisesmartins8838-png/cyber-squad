@@ -1,0 +1,3 @@
+CORREÇÃO: style.css e game.js agora usam caminhos relativos, então a página renderiza corretamente quando aberta em /public/index.html no Live Server. Se Socket.IO não existir (prévia local), o jogo entra em modo de demonstração e mostra aviso; multiplayer real exige o servidor hospedado.
+
+Estrutura: server.js, package.json, render.yaml, public/index.html, public/style.css, public/game.js.
