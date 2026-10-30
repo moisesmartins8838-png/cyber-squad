@@ -1,0 +1,35 @@
+SPARROW DUO SPACE - ATUALIZACAO 2.0
+
+NOVO COMBATE
+- Asteroides atravessam a arena e desaparecem ao sair da tela.
+- Naves invasoras aparecem entre os asteroides, perseguem lateralmente e disparam contra a dupla.
+- Projéteis inimigos atingem escudo e integridade da nave.
+- Ao atingir 500 pontos, a sala da dupla entra na fase CHEFE FINAL.
+- O chefe tem 180 pontos de vida, movimentação lateral e rajadas direcionadas.
+- Quando o chefe perde metade da vida, adiciona disparos laterais.
+- A dupla só vence depois de destruir o chefe.
+- O chefe é individual por sala: outras duplas continuam sua própria partida.
+- Habilidade especial restaura o escudo; contra o chefe, também causa dano.
+- PC ímpar é piloto; PC par é artilheiro, selecionado automaticamente.
+
+INSTALACAO
+1. Faça backup da pasta atual.
+2. Extraia este ZIP.
+3. Copie o conteúdo da pasta cyber-squad-corrigido para a raiz do repositório local, substituindo os arquivos existentes.
+4. Preserve a pasta .git que já existe no seu projeto. Este ZIP não inclui .git.
+5. No terminal, dentro da raiz do projeto, execute:
+   npm install
+   git add -A
+   git commit -m "Adiciona inimigos e chefe final ao Sparrow Duo"
+   git push origin main
+6. No Render, confira que Root Directory está vazio e Start Command é npm start (ou node server.js). Aguarde o deploy.
+
+TESTE
+- Dupla 1: https://SEU-SITE/?pc=1 e https://SEU-SITE/?pc=2
+- Dupla 2: https://SEU-SITE/?pc=3 e https://SEU-SITE/?pc=4
+- Repita até PC 27 e PC 28.
+- A partida multiplayer começa quando os dois PCs da dupla estiverem conectados.
+
+CONTROLES
+Piloto: WASD/setas. Efeito especial: V após o artilheiro pedir com E.
+Artilheiro: segurar ESPACO ou clicar no campo para disparar; E pede habilidade.
