@@ -18,12 +18,12 @@ function newRoom(id) {
     ship: { x: 500, y: 555, hp: 100, shield: 100 }, enemies: [], bullets: [],
     enemyBullets: [], gems: [], boss: null, nextId: 1, skill: null,
     skillCooldown: 0, lastSpawn: 0, lastEnemyShot: 0, lastBossShot: 0,
-    lastTick: Date.now(), combo: 0 };
+    lastTick: Date.now(), combo: 0, streakHits: 0 };
 }
 function roomFor(pc) { const id = roomId(pc); if (!rooms.has(id)) rooms.set(id, newRoom(id)); return rooms.get(id); }
 function publicState(r) {
   return { roomId: r.id, players: r.players.map(p => ({ pc: p.pc, role: p.role, connected: !!p.socketId, name: p.name })),
-    score: r.score, time: Math.ceil(r.time), status: r.status, phase: r.phase, ship: r.ship,
+    score: r.score, time: Math.ceil(r.time), status: r.status, phase: r.phase, ship: r.ship, streakHits: r.streakHits, comboMultiplier: r.streakHits >= 10 ? 1.6 : r.streakHits >= 6 ? 1.35 : r.streakHits >= 3 ? 1.15 : 1,
     enemies: r.enemies, bullets: r.bullets, enemyBullets: r.enemyBullets, gems: r.gems,
     boss: r.boss, skill: r.skill, skillCooldown: Math.ceil(r.skillCooldown), combo: r.combo, standings: winners.slice() };
 }
@@ -52,6 +52,8 @@ function finish(r, won) {
   io.to(r.id).emit('roundEnd', { score: r.score, won, place: winners.findIndex(w=>w.roomId===r.id)+1, bossDefeated: won }); emit(r);
 }
 function damageShip(r, amount) {
+  // Qualquer dano recebido quebra a sequência de acertos.
+  r.streakHits = 0; r.combo = 0;
   if (r.ship.shield > 0) { const absorbed = Math.min(r.ship.shield, amount); r.ship.shield -= absorbed; amount -= absorbed; }
   if (amount > 0) r.ship.hp = Math.max(0, r.ship.hp - amount);
   if (r.ship.hp <= 0) finish(r, false);
@@ -102,8 +104,8 @@ function tick(r, dt, now) {
       for (let j = r.bullets.length - 1; j >= 0; j--) {
         const shot = r.bullets[j];
         if (Math.hypot(shot.x - e.x, shot.y - e.y) < e.radius + 6) {
-          r.bullets.splice(j, 1); e.hp--;
-          if (e.hp <= 0) { r.score += e.value; r.combo++; if (r.combo % 10 === 0) r.score += 50; if (Math.random() < .5) r.gems.push({ id: r.nextId++, x: e.x, y: e.y, value: 10 }); r.enemies.splice(i, 1); }
+          r.bullets.splice(j, 1); e.hp--; r.streakHits++; r.combo = r.streakHits;
+          if (e.hp <= 0) { const mult = r.streakHits >= 10 ? 1.6 : r.streakHits >= 6 ? 1.35 : r.streakHits >= 3 ? 1.15 : 1; r.score += Math.round(e.value * mult); if (r.streakHits > 0 && r.streakHits % 10 === 0) r.score += 50; if (Math.random() < .5) r.gems.push({ id: r.nextId++, x: e.x, y: e.y, value: 10 }); r.enemies.splice(i, 1); }
           break;
         }
       }
