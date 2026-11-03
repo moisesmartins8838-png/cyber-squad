@@ -18,12 +18,12 @@ function newRoom(id) {
     ship: { x: 500, y: 555, hp: 100, shield: 100 }, enemies: [], bullets: [],
     enemyBullets: [], gems: [], boss: null, nextId: 1, skill: null,
     skillCooldown: 0, lastSpawn: 0, lastEnemyShot: 0, lastBossShot: 0,
-    lastTick: Date.now(), combo: 0, streakHits: 0 };
+    lastTick: Date.now(), combo: 0, streakHits: 0, recentPoints: '+0', recentAt: Date.now() };
 }
 function roomFor(pc) { const id = roomId(pc); if (!rooms.has(id)) rooms.set(id, newRoom(id)); return rooms.get(id); }
 function publicState(r) {
   return { roomId: r.id, players: r.players.map(p => ({ pc: p.pc, role: p.role, connected: !!p.socketId, name: p.name })),
-    score: r.score, time: Math.ceil(r.time), status: r.status, phase: r.phase, ship: r.ship, streakHits: r.streakHits, comboMultiplier: r.streakHits >= 10 ? 1.6 : r.streakHits >= 6 ? 1.35 : r.streakHits >= 3 ? 1.15 : 1,
+    score: r.score, time: Math.ceil(r.time), status: r.status, phase: r.phase, ship: r.ship, streakHits: r.streakHits, recentPoints: r.recentPoints, recentAt: r.recentAt, comboMultiplier: r.streakHits >= 10 ? 1.6 : r.streakHits >= 6 ? 1.35 : r.streakHits >= 3 ? 1.15 : 1,
     enemies: r.enemies, bullets: r.bullets, enemyBullets: r.enemyBullets, gems: r.gems,
     boss: r.boss, skill: r.skill, skillCooldown: Math.ceil(r.skillCooldown), combo: r.combo, standings: winners.slice() };
 }
@@ -104,17 +104,17 @@ function tick(r, dt, now) {
       for (let j = r.bullets.length - 1; j >= 0; j--) {
         const shot = r.bullets[j];
         if (Math.hypot(shot.x - e.x, shot.y - e.y) < e.radius + 6) {
-          r.bullets.splice(j, 1); e.hp--; r.streakHits++; r.combo = r.streakHits;
-          if (e.hp <= 0) { const mult = r.streakHits >= 10 ? 1.6 : r.streakHits >= 6 ? 1.35 : r.streakHits >= 3 ? 1.15 : 1; r.score += Math.round(e.value * mult); if (r.streakHits > 0 && r.streakHits % 10 === 0) r.score += 50; if (Math.random() < .5) r.gems.push({ id: r.nextId++, x: e.x, y: e.y, value: 10 }); r.enemies.splice(i, 1); }
+          r.bullets.splice(j, 1); e.hp--; if (e.kind === 'raider') { r.streakHits++; r.combo = r.streakHits; r.score += 5; r.recentPoints = '+5 PONTOS'; r.recentAt = Date.now(); }
+          if (e.hp <= 0) { if (e.kind === 'raider') { r.score += 10; r.recentPoints = '+10 ELIMINAÇÃO'; r.recentAt = Date.now(); } if (Math.random() < .5) r.gems.push({ id: r.nextId++, x: e.x, y: e.y, value: 0 }); r.enemies.splice(i, 1); }
           break;
         }
       }
       if (r.enemies.includes(e) && Math.hypot(e.x - r.ship.x, e.y - r.ship.y) < e.radius + 18) { r.enemies.splice(i, 1); damageShip(r, e.kind === 'raider' ? 16 : 12); }
     }
-    for (let i = r.gems.length - 1; i >= 0; i--) { const g = r.gems[i]; g.y += 85 * dt; if (Math.hypot(g.x - r.ship.x, g.y - r.ship.y) < 27) { r.score += g.value; r.gems.splice(i, 1); } else if (g.y > H + 20) r.gems.splice(i, 1); }
+    for (let i = r.gems.length - 1; i >= 0; i--) { const g = r.gems[i]; g.y += 85 * dt; if (Math.hypot(g.x - r.ship.x, g.y - r.ship.y) < 27) { r.gems.splice(i, 1); } else if (g.y > H + 20) r.gems.splice(i, 1); }
   } else if (r.phase === 'boss' && r.boss) {
     const b = r.boss;
-    for (let i = r.bullets.length - 1; i >= 0; i--) { const shot = r.bullets[i]; if (Math.abs(shot.x - b.x) < 100 && Math.abs(shot.y - b.y) < 65) { r.bullets.splice(i, 1); b.hp -= 1; if (b.hp <= 0) { b.hp = 0; r.score += 500; finish(r, true); break; } } }
+    for (let i = r.bullets.length - 1; i >= 0; i--) { const shot = r.bullets[i]; if (Math.abs(shot.x - b.x) < 100 && Math.abs(shot.y - b.y) < 65) { r.bullets.splice(i, 1); b.hp -= 1; r.score += 5; r.streakHits++; r.combo = r.streakHits; r.recentPoints = '+5 PONTOS'; r.recentAt = Date.now(); if (b.hp <= 0) { b.hp = 0; r.score += 500; finish(r, true); break; } } }
   }
   emit(r);
 }
@@ -135,7 +135,7 @@ io.on('connection', socket => {
   socket.on('move', d => { const r = rooms.get(socket.data.room); if (!r || r.status !== 'playing' || socket.data.pc % 2 === 0) return; const dx = Math.max(-1, Math.min(1, Number(d?.dx) || 0)), dy = Math.max(-1, Math.min(1, Number(d?.dy) || 0)); r.ship.x = Math.max(25, Math.min(975, r.ship.x + dx * 310 * .016)); r.ship.y = Math.max(65, Math.min(605, r.ship.y + dy * 310 * .016)); });
   socket.on('shoot', () => { const r = rooms.get(socket.data.room); if (!r || r.status !== 'playing' || socket.data.pc % 2 !== 0) return; if (r.bullets.length < 50) r.bullets.push({ id: r.nextId++, x: r.ship.x - 9, y: r.ship.y - 18 }, { id: r.nextId++, x: r.ship.x + 9, y: r.ship.y - 18 }); });
   socket.on('requestSkill', () => { const r = rooms.get(socket.data.room); if (!r || r.status !== 'playing' || socket.data.pc % 2 !== 0) return; r.skill = { requestedBy: socket.data.pc, expires: Date.now() + 6000 }; io.to(r.id).emit('notice', 'Artilheiro pediu habilidade! Piloto pressione V para aceitar.'); emit(r); });
-  socket.on('approveSkill', () => { const r = rooms.get(socket.data.room); if (!r || r.status !== 'playing' || socket.data.pc % 2 !== 1 || !r.skill || r.skill.expires < Date.now() || r.skillCooldown > 0) return; r.skill = null; r.skillCooldown = 18; r.ship.shield = 100; if (r.phase === 'asteroids') { for (let i = r.enemies.length - 1; i >= 0; i--) if (Math.hypot(r.enemies[i].x - r.ship.x, r.enemies[i].y - r.ship.y) < 190) { r.score += r.enemies[i].value; r.enemies.splice(i, 1); } } else if (r.boss) r.boss.hp = Math.max(1, r.boss.hp - 18); r.score += 50; io.to(r.id).emit('notice', 'PULSO DE ENERGIA! Escudo restaurado e +50 pontos.'); emit(r); });
+  socket.on('approveSkill', () => { const r = rooms.get(socket.data.room); if (!r || r.status !== 'playing' || socket.data.pc % 2 !== 1 || !r.skill || r.skill.expires < Date.now() || r.skillCooldown > 0) return; r.skill = null; r.skillCooldown = 18; r.ship.shield = 100; if (r.phase === 'asteroids') { for (let i = r.enemies.length - 1; i >= 0; i--) if (Math.hypot(r.enemies[i].x - r.ship.x, r.enemies[i].y - r.ship.y) < 190) { r.enemies.splice(i, 1); } } else if (r.boss) r.boss.hp = Math.max(1, r.boss.hp - 18); r.score += 50; io.to(r.id).emit('notice', 'PULSO DE ENERGIA! Escudo restaurado e +50 pontos.'); emit(r); });
   socket.on('chat', d => { const r = rooms.get(socket.data.room); if (!r) return; const p = r.players.find(p => p.pc === socket.data.pc); if (p) io.to(r.id).emit('chatMessage', { pc: p.pc, role: p.role, message: String(d?.message || '').slice(0, 120) }); });
   socket.on('reset', () => { const r = rooms.get(socket.data.room); if (!r || socket.data.pc % 2 !== 1 || r.status !== 'finished') return; const id = r.id, players = r.players.filter(p => p.socketId); Object.assign(r, newRoom(id)); r.players = players; emit(r); io.to(r.id).emit('roundReady'); io.to(r.id).emit('notice', 'Nova partida preparada! Aguardando os dois jogadores pressionarem START.'); });
   socket.on('ready', () => { const r=rooms.get(socket.data.room); if(!r||r.status!=='waiting')return; const connected=r.players.filter(p=>p.socketId).length; if(connected>=2){r.status='playing';r.time=300;r.lastTick=Date.now();r.lastSpawn=Date.now();io.to(r.id).emit('notice','NOVA MISSÃO INICIADA!');emit(r);} });
