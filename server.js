@@ -10,6 +10,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.get('/health', (_, res) => res.json({ ok: true, game: 'Sparrow Duo Space', version: '2.0.0' }));
 
 const rooms = new Map();
+const winners = []; // classificação global de duplas vencedoras nesta competição
 const W = 1000, H = 650;
 function roomId(pc) { return 'duo-' + Math.ceil(pc / 2); }
 function newRoom(id) {
@@ -24,7 +25,7 @@ function publicState(r) {
   return { roomId: r.id, players: r.players.map(p => ({ pc: p.pc, role: p.role, connected: !!p.socketId, name: p.name })),
     score: r.score, time: Math.ceil(r.time), status: r.status, phase: r.phase, ship: r.ship,
     enemies: r.enemies, bullets: r.bullets, enemyBullets: r.enemyBullets, gems: r.gems,
-    boss: r.boss, skill: r.skill, skillCooldown: Math.ceil(r.skillCooldown), combo: r.combo };
+    boss: r.boss, skill: r.skill, skillCooldown: Math.ceil(r.skillCooldown), combo: r.combo, standings: winners.slice() };
 }
 function emit(r) { io.to(r.id).emit('state', publicState(r)); }
 function addAsteroid(r) {
@@ -46,8 +47,9 @@ function startBoss(r) {
 }
 function finish(r, won) {
   if (r.status === 'finished') return;
-  r.status = 'finished'; r.phase = won ? 'victory' : r.phase;
-  io.to(r.id).emit('roundEnd', { score: r.score, won, bossDefeated: won });
+  r.status = 'finished'; r.phase = won ? 'victory' : 'defeat';
+  if (won && !winners.some(w => w.roomId === r.id)) { winners.push({ roomId:r.id, score:r.score, at:Date.now() }); const place=winners.length; io.emit('teamWinner',{roomId:r.id,place,standings:winners.slice()}); }
+  io.to(r.id).emit('roundEnd', { score: r.score, won, place: winners.findIndex(w=>w.roomId===r.id)+1, bossDefeated: won }); emit(r);
 }
 function damageShip(r, amount) {
   if (r.ship.shield > 0) { const absorbed = Math.min(r.ship.shield, amount); r.ship.shield -= absorbed; amount -= absorbed; }
@@ -133,7 +135,8 @@ io.on('connection', socket => {
   socket.on('requestSkill', () => { const r = rooms.get(socket.data.room); if (!r || r.status !== 'playing' || socket.data.pc % 2 !== 0) return; r.skill = { requestedBy: socket.data.pc, expires: Date.now() + 6000 }; io.to(r.id).emit('notice', 'Artilheiro pediu habilidade! Piloto pressione V para aceitar.'); emit(r); });
   socket.on('approveSkill', () => { const r = rooms.get(socket.data.room); if (!r || r.status !== 'playing' || socket.data.pc % 2 !== 1 || !r.skill || r.skill.expires < Date.now() || r.skillCooldown > 0) return; r.skill = null; r.skillCooldown = 18; r.ship.shield = 100; if (r.phase === 'asteroids') { for (let i = r.enemies.length - 1; i >= 0; i--) if (Math.hypot(r.enemies[i].x - r.ship.x, r.enemies[i].y - r.ship.y) < 190) { r.score += r.enemies[i].value; r.enemies.splice(i, 1); } } else if (r.boss) r.boss.hp = Math.max(1, r.boss.hp - 18); r.score += 50; io.to(r.id).emit('notice', 'PULSO DE ENERGIA! Escudo restaurado e +50 pontos.'); emit(r); });
   socket.on('chat', d => { const r = rooms.get(socket.data.room); if (!r) return; const p = r.players.find(p => p.pc === socket.data.pc); if (p) io.to(r.id).emit('chatMessage', { pc: p.pc, role: p.role, message: String(d?.message || '').slice(0, 120) }); });
-  socket.on('reset', () => { const r = rooms.get(socket.data.room); if (!r || socket.data.pc % 2 !== 1) return; const id = r.id, players = r.players.filter(p => p.socketId); Object.assign(r, newRoom(id)); r.players = players; emit(r); io.to(r.id).emit('notice', 'Nova partida preparada. Aguardando a dupla.'); });
+  socket.on('reset', () => { const r = rooms.get(socket.data.room); if (!r || socket.data.pc % 2 !== 1 || r.status !== 'finished') return; const id = r.id, players = r.players.filter(p => p.socketId); Object.assign(r, newRoom(id)); r.players = players; emit(r); io.to(r.id).emit('roundReady'); io.to(r.id).emit('notice', 'Nova partida preparada! Aguardando os dois jogadores pressionarem START.'); });
+  socket.on('ready', () => { const r=rooms.get(socket.data.room); if(!r||r.status!=='waiting')return; const connected=r.players.filter(p=>p.socketId).length; if(connected>=2){r.status='playing';r.time=300;r.lastTick=Date.now();r.lastSpawn=Date.now();io.to(r.id).emit('notice','NOVA MISSÃO INICIADA!');emit(r);} });
   socket.on('disconnect', () => { const r = rooms.get(socket.data.room); if (!r) return; const p = r.players.find(p => p.socketId === socket.id); if (p) p.socketId = null; emit(r); });
 });
 const port = process.env.PORT || 3000;
